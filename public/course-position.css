@@ -1,1 +1,1 @@
-.shell{display:flex;flex-direction:column}.topbar{order:1}.hero{order:2}.metrics{order:3}.content-grid{order:4}.date-goals{order:4.5}.records{order:5}.course-plan{order:6}.modal-backdrop,.splash,.focus-timer{order:99}
+.shell{display:flex;flex-direction:column}.topbar{order:1}.hero{order:2}.metrics{order:3}.content-grid,.date-goals{order:4}.records{order:5}.course-plan{order:6}.modal-backdrop,.splash,.focus-timer{order:99}
