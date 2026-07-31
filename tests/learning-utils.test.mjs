@@ -13,8 +13,8 @@ test("uses the local calendar date instead of UTC", () => {
   assert.equal(getLocalDateString(localEvening), "2026-07-31");
 });
 
-test("builds the current month using local dates", () => {
-  const dates = getDatesInCurrentMonth(new Date(2026, 1, 28, 12));
+test("builds every day in the current month using local dates", () => {
+  const dates = getDatesInCurrentMonth(new Date(2026, 1, 10, 12));
   assert.equal(dates.length, 28);
   assert.equal(dates[0], "2026-02-01");
   assert.equal(dates.at(-1), "2026-02-28");
