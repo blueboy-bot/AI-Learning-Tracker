@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "desktop:web": "vinext dev --host 127.0.0.1",
-    "build": "vinext build",
+    "build": "next build",
     "tauri": "tauri",
     "start": "vinext start",
     "test": "pnpm build && node --test tests/learning-utils.test.mjs",
