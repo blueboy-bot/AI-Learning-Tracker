@@ -41,6 +41,8 @@ export default function Home() {
   const [isBooting, setIsBooting] = useState(true);
   const [timerState, setTimerState] = useState<"idle" | "studying" | "choosing" | "resting">("idle");
   const [sessionSeconds, setSessionSeconds] = useState(0);
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
   const [selectedDate, setSelectedDate] = useState(today());
   const zh = lang === "zh";
 
@@ -57,6 +59,7 @@ export default function Home() {
       const elapsed = timer.state === "studying" ? Math.max(0, Math.floor((Date.now() - timer.updatedAt) / 1000)) : 0;
       setSessionSeconds(timer.seconds + elapsed);
       setTimerState(timer.state);
+      if (timer.state === "studying") setRunStartedAt(Date.now());
     }
     setLoaded(true);
     const timer = window.setTimeout(() => setIsBooting(false), 900);
@@ -65,18 +68,31 @@ export default function Home() {
   useEffect(() => { if (loaded) localStorage.setItem("ai-learning-tracker-entries", JSON.stringify(entries)); }, [entries, loaded]);
   useEffect(() => { if (loaded) localStorage.setItem("ai-learning-tracker-goal", String(goal)); }, [goal, loaded]);
   useEffect(() => {
-    if (loaded) localStorage.setItem("ai-learning-tracker-timer", JSON.stringify({ state: timerState, seconds: sessionSeconds, updatedAt: Date.now() }));
-  }, [timerState, sessionSeconds, loaded]);
+    if (loaded) localStorage.setItem("ai-learning-tracker-timer", JSON.stringify({ state: runStartedAt ? "studying" : timerState, seconds: sessionSeconds, updatedAt: runStartedAt ?? Date.now() }));
+  }, [timerState, sessionSeconds, runStartedAt, loaded]);
   useEffect(() => { if (loaded) localStorage.setItem("ai-learning-tracker-course-plan", JSON.stringify(completedLessons)); }, [completedLessons, loaded]);
   useEffect(() => {
-    if (timerState !== "studying") return;
-    const interval = window.setInterval(() => setSessionSeconds((seconds) => seconds + 1), 1000);
+    if (!runStartedAt) return;
+    const interval = window.setInterval(() => setClock(Date.now()), 500);
     return () => window.clearInterval(interval);
-  }, [timerState]);
+  }, [runStartedAt]);
+
+  const displayedSessionSeconds = sessionSeconds + (runStartedAt ? Math.max(0, Math.floor((clock - runStartedAt) / 1000)) : 0);
+  const startSession = () => {
+    const startedAt = Date.now();
+    setClock(startedAt);
+    setRunStartedAt(startedAt);
+    setTimerState("studying");
+  };
+  const pauseSession = () => {
+    setSessionSeconds(displayedSessionSeconds);
+    setRunStartedAt(null);
+    setTimerState("resting");
+  };
 
   const loggedTodayMinutes = entries.filter((x) => x.date === today()).reduce((sum, x) => sum + x.minutes, 0);
-  const todayMinutes = loggedTodayMinutes + sessionSeconds / 60;
-  const todayFocusLabel = formatDuration(todayMinutes, zh, sessionSeconds % 60);
+  const todayMinutes = loggedTodayMinutes + displayedSessionSeconds / 60;
+  const todayFocusLabel = formatDuration(todayMinutes, zh, displayedSessionSeconds % 60);
   const weekMinutes = entries.filter((x) => new Date(x.date) >= new Date(Date.now() - 6 * 86400000)).reduce((sum, x) => sum + x.minutes, 0);
   const selectedEntries = entries.filter((x) => x.date === selectedDate);
   const selectedMinutes = selectedEntries.reduce((sum, x) => sum + x.minutes, 0);
@@ -96,8 +112,8 @@ export default function Home() {
     setEntries((all) => [entry, ...all]); setShowForm(false); event.currentTarget.reset();
   };
   const finishSession = () => {
-    if (sessionSeconds > 0) setEntries((all) => [{ id: crypto.randomUUID(), date: today(), topic: zh ? "专注学习" : "Focused learning", category: zh ? "工程实践" : "Engineering", minutes: Math.max(1, Math.round(sessionSeconds / 60)), progress: 100, note: zh ? "通过专注计时器记录。" : "Logged with the focus timer." }, ...all]);
-    setSessionSeconds(0); setTimerState("idle");
+    if (displayedSessionSeconds > 0) setEntries((all) => [{ id: crypto.randomUUID(), date: today(), topic: zh ? "专注学习" : "Focused learning", category: zh ? "工程实践" : "Engineering", minutes: Math.max(1, Math.round(displayedSessionSeconds / 60)), progress: 100, note: zh ? "通过专注计时器记录。" : "Logged with the focus timer." }, ...all]);
+    setSessionSeconds(0); setRunStartedAt(null); setTimerState("idle");
   };
   const timerLabel = timerState === "idle" ? (zh ? "开始学习" : "Start") : timerState === "resting" ? (zh ? "继续学习" : "Resume") : timerState === "choosing" ? (zh ? "选择操作" : "Choose") : (zh ? "学习中" : "Studying");
 
@@ -116,7 +132,7 @@ export default function Home() {
     <div className="panel focus"><p className="eyebrow">{zh ? "今日进度" : "TODAY'S PROGRESS"}</p><h2>{todayMinutes >= goal ? (zh ? "今天的目标已完成" : "Today's goal is complete") : (zh ? "今天，学点什么？" : "What will you learn today?")}</h2><p>{todayMinutes >= goal ? (zh ? "很好，别忘了写下今天的关键收获。" : "Nice work. Remember to capture your key takeaway.") : (zh ? `还差 ${Math.ceil(Math.max(0, goal - todayMinutes))} 分钟达到你的每日目标。` : `${Math.ceil(Math.max(0, goal - todayMinutes))} min left to reach your daily goal.`)}</p><button className="text-button" onClick={() => setShowForm(true)}>{zh ? "写下学习记录" : "Write a study log"} →</button></div></section>
     <section className="panel records"><div className="panel-heading"><div><p className="eyebrow">{zh ? "学习日志" : "STUDY LOG"}</p><h2>{zh ? "最近记录" : "Recent entries"}</h2></div>{confirmClear ? <div className="clear-confirm"><button className="cancel" onClick={() => setConfirmClear(false)}>{zh ? "取消" : "Cancel"}</button><button className="confirm-delete" onClick={() => { setEntries([]); setConfirmClear(false); }}>{zh ? "确认清空" : "Confirm clear"}</button></div> : <button className="ghost" onClick={() => setConfirmClear(true)}>{zh ? "清空记录" : "Clear all"}</button>}</div>{entries.length === 0 ? <div className="empty">{zh ? "还没有记录。点击“记录今天”，开始你的第一条学习日志。" : "No entries yet. Select Log today to create your first study log."}</div> : <div className="record-list">{entries.map((entry) => <article className="record" key={entry.id}><div className="record-date"><b>{entry.date.slice(5).replace("-", "/")}</b><span>{entry.minutes} min</span></div><div className="record-body"><div><span className="tag">{entry.category}</span><h3>{entry.topic}</h3></div><p>{entry.note || (zh ? "未添加学习笔记" : "No notes added")}</p></div><div className="record-progress"><b>{entry.progress}%</b><div><i style={{ width: `${entry.progress}%` }} /></div></div><button aria-label={`${zh ? "删除" : "Delete"} ${entry.topic}`} className="delete" onClick={() => setEntries(all => all.filter(x => x.id !== entry.id))}>×</button></article>)}</div>}</section>
     {showForm && <div className="modal-backdrop" role="presentation"><form className="entry-form" onSubmit={submit}><div className="form-heading"><div><p className="eyebrow">{zh ? "每日记录" : "DAILY LOG"}</p><h2>{zh ? "添加学习日志" : "Add study log"}</h2></div><button type="button" className="delete" onClick={() => setShowForm(false)}>×</button></div><label>{zh ? "日期" : "Date"}<input name="date" type="date" defaultValue={today()} required /></label><label>{zh ? "学习主题" : "Study topic"}<input name="topic" placeholder={zh ? "例如：实现一个 RAG 问答 Demo" : "e.g. Build a RAG Q&A demo"} required /></label><div className="form-row"><label>{zh ? "学习方向" : "Learning area"}<select name="category">{categories.map(x => <option key={x}>{x}</option>)}</select></label><label>{zh ? "专注分钟" : "Focus minutes"}<input name="minutes" type="number" min="1" defaultValue="60" required /></label><label>{zh ? "完成度" : "Progress"}<input name="progress" type="number" min="0" max="100" defaultValue="70" required /></label></div><label>{zh ? "收获与问题" : "Takeaways & blockers"}<textarea name="note" placeholder={zh ? "今天学到了什么？遇到哪些问题？" : "What did you learn? What got in the way?"} /></label><button className="primary" type="submit">{zh ? "保存记录" : "Save log"}</button></form></div>}
-    <div className={`focus-timer ${timerState}`}><div className="timer-popover">{timerState === "choosing" && <><button onClick={() => setTimerState("resting")}>☕ {zh ? "休息一下" : "Take a break"}</button><button onClick={finishSession}>✓ {zh ? "结束并记录" : "Finish & save"}</button></>}{timerState === "resting" && <span>{zh ? "计时已暂停" : "Timer paused"}</span>}</div><button className="timer-button" aria-label={timerLabel} onClick={() => setTimerState((state) => state === "idle" || state === "resting" ? "studying" : state === "studying" ? "choosing" : state)}><span>{timerState === "studying" ? "Ⅱ" : timerState === "resting" ? "▶" : "◉"}</span><b>{timerState === "studying" || timerState === "choosing" || timerState === "resting" ? `${String(Math.floor(sessionSeconds / 60)).padStart(2, "0")}:${String(sessionSeconds % 60).padStart(2, "0")}` : timerLabel}</b></button></div>
+    <div className={`focus-timer ${timerState}`}><div className="timer-popover">{timerState === "choosing" && <><button onClick={pauseSession}>☕ {zh ? "休息一下" : "Take a break"}</button><button onClick={finishSession}>✓ {zh ? "结束并记录" : "Finish & save"}</button></>}{timerState === "resting" && <span>{zh ? "计时已暂停" : "Timer paused"}</span>}</div><button className="timer-button" aria-label={timerLabel} onClick={() => { if (timerState === "idle" || timerState === "resting") startSession(); else if (timerState === "studying") setTimerState("choosing"); }}><span>{timerState === "studying" ? "Ⅱ" : timerState === "resting" ? "▶" : "◉"}</span><b>{timerState === "studying" || timerState === "choosing" || timerState === "resting" ? `${String(Math.floor(displayedSessionSeconds / 60)).padStart(2, "0")}:${String(displayedSessionSeconds % 60).padStart(2, "0")}` : timerLabel}</b></button></div>
   </main>;
 }
 
