@@ -2,6 +2,10 @@
 
 [English](#english) | [简体中文](#简体中文)
 
+## 在线体验
+
+[打开 Live Demo](https://ai-learning-tracker-blueboy-bots-projects.vercel.app)
+
 一个面向 AI、编程和软件开发学习者的本地优先学习追踪工具。记录每日学习、保持专注节奏，并将学习计划转化为可完成的路径。
 
 ![AI Learning Tracker：学习记录、专注计时与课程进度](public/readme-hero.png)
@@ -53,6 +57,10 @@ pnpm exec vinext build
 ## English
 
 AI Learning Tracker is a local-first learning tracker for people studying AI, programming, and software development.
+
+### Live Demo
+
+[Open the Live Demo](https://ai-learning-tracker-blueboy-bots-projects.vercel.app)
 
 ### Highlights
 
