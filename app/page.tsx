@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { calculateStreak, getDatesInCurrentMonth, getElapsedSeconds, getLocalDateString, parseStoredJson } from "../lib/learning-utils.mjs";
 
 type Entry = { id: string; date: string; topic: string; category: string; minutes: number; progress: number; note: string; projectUrl?: string; tomorrowPlan?: string };
+type DateGoal = { id: string; date: string; title: string; completed: boolean };
 const categories = [
   { id: "ai-apps", zh: "AI 应用", en: "AI Applications" },
   { id: "theory", zh: "模型原理", en: "Model Theory" },
@@ -60,6 +61,8 @@ export default function Home() {
   const [clock, setClock] = useState(() => Date.now());
   const [selectedDate, setSelectedDate] = useState(today());
   const [calendarDate, setCalendarDate] = useState(() => new Date());
+  const [dateGoals, setDateGoals] = useState<DateGoal[]>([]);
+  const [showGoalForm, setShowGoalForm] = useState(false);
   const zh = lang === "zh";
 
   useEffect(() => {
@@ -68,10 +71,12 @@ export default function Home() {
       const savedGoal = localStorage.getItem("ai-learning-tracker-goal");
       const savedTimer = parseStoredJson(localStorage.getItem("ai-learning-tracker-timer"), null);
       const savedPlan = parseStoredJson(localStorage.getItem("ai-learning-tracker-course-plan"), []);
+      const savedDateGoals = parseStoredJson(localStorage.getItem("ai-learning-tracker-date-goals"), []);
       if (Array.isArray(saved)) setEntries(saved.filter((entry): entry is Entry => Boolean(entry) && typeof entry === "object" && typeof entry.date === "string" && typeof entry.minutes === "number"));
       const parsedGoal = Number(savedGoal);
       if (Number.isFinite(parsedGoal) && parsedGoal >= 10) setGoal(parsedGoal);
       if (Array.isArray(savedPlan) && savedPlan.every((lesson) => typeof lesson === "string")) setCompletedLessons(savedPlan);
+      if (Array.isArray(savedDateGoals)) setDateGoals(savedDateGoals.filter((goal): goal is DateGoal => Boolean(goal) && typeof goal === "object" && typeof goal.date === "string" && typeof goal.title === "string" && typeof goal.completed === "boolean"));
       if (savedTimer) {
         const timer = savedTimer as { state?: "idle" | "studying" | "choosing" | "resting"; seconds?: number; updatedAt?: number };
         const isValidTimer = ["idle", "studying", "choosing", "resting"].includes(timer.state ?? "") && Number.isFinite(timer.seconds) && Number.isFinite(timer.updatedAt);
@@ -93,6 +98,7 @@ export default function Home() {
     if (loaded) localStorage.setItem("ai-learning-tracker-timer", JSON.stringify({ state: runStartedAt ? "studying" : timerState, seconds: sessionSeconds, updatedAt: runStartedAt ?? Date.now() }));
   }, [timerState, sessionSeconds, runStartedAt, loaded]);
   useEffect(() => { if (loaded) localStorage.setItem("ai-learning-tracker-course-plan", JSON.stringify(completedLessons)); }, [completedLessons, loaded]);
+  useEffect(() => { if (loaded) localStorage.setItem("ai-learning-tracker-date-goals", JSON.stringify(dateGoals)); }, [dateGoals, loaded]);
   useEffect(() => {
     if (!runStartedAt) return;
     const interval = window.setInterval(() => setClock(Date.now()), 500);
@@ -120,10 +126,13 @@ export default function Home() {
   const weekMinutes = weekEntries.reduce((sum, x) => sum + x.minutes, 0);
   const selectedEntries = entries.filter((x) => x.date === selectedDate);
   const selectedMinutes = selectedEntries.reduce((sum, x) => sum + x.minutes, 0);
+  const selectedGoals = dateGoals.filter((goal) => goal.date === selectedDate);
   const streak = useMemo(() => calculateStreak(entries), [entries]);
   const monthDays = useMemo(() => getDatesInCurrentMonth(calendarDate), [calendarDate]);
+  const futureLimit = new Date(new Date().getFullYear(), new Date().getMonth() + 6, 1);
   const changeCalendarMonth = (direction: number) => {
     const nextMonth = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + direction, 1);
+    if (direction > 0 && nextMonth > futureLimit) return;
     setCalendarDate(nextMonth);
     setSelectedDate(getLocalDateString(nextMonth));
   };
@@ -135,6 +144,14 @@ export default function Home() {
     if (!topic || !Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || !Number.isFinite(progress) || progress < 0 || progress > 100) return;
     const entry: Entry = { id: crypto.randomUUID(), date: String(form.get("date")), topic, category: String(form.get("category")), minutes, progress, note: String(form.get("note")), projectUrl: String(form.get("projectUrl")), tomorrowPlan: String(form.get("tomorrowPlan")) };
     setEntries((all) => [entry, ...all]); setShowForm(false); event.currentTarget.reset();
+  };
+  const addDateGoal = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const title = String(new FormData(event.currentTarget).get("goalTitle") ?? "").trim();
+    if (!title) return;
+    setDateGoals((all) => [...all, { id: crypto.randomUUID(), date: selectedDate, title, completed: false }]);
+    setShowGoalForm(false);
+    event.currentTarget.reset();
   };
   const finishSession = () => {
     if (displayedSessionSeconds > 0) setEntries((all) => [{ id: crypto.randomUUID(), date: today(), topic: zh ? "专注学习" : "Focused learning", category: "engineering", minutes: Math.max(1, Math.round(displayedSessionSeconds / 60)), progress: 100, note: zh ? "通过专注计时器记录。" : "Logged with the focus timer." }, ...all]);
@@ -157,6 +174,7 @@ export default function Home() {
     <div className="panel focus"><p className="eyebrow">{zh ? "今日进度" : "TODAY'S PROGRESS"}</p><h2>{todayMinutes >= goal ? (zh ? "今天的目标已完成" : "Today's goal is complete") : (zh ? "今天，学点什么？" : "What will you learn today?")}</h2><p>{todayMinutes >= goal ? (zh ? "很好，别忘了写下今天的关键收获。" : "Nice work. Remember to capture your key takeaway.") : (zh ? `还差 ${Math.ceil(Math.max(0, goal - todayMinutes))} 分钟达到你的每日目标。` : `${Math.ceil(Math.max(0, goal - todayMinutes))} min left to reach your daily goal.`)}</p><button className="text-button" onClick={() => setShowForm(true)}>{zh ? "写下学习记录" : "Write a study log"} →</button></div></section>
     <section className="panel records"><div className="panel-heading"><div><p className="eyebrow">{zh ? "学习日志" : "STUDY LOG"}</p><h2>{zh ? "最近记录" : "Recent entries"}</h2></div>{confirmClear ? <div className="clear-confirm"><button className="cancel" onClick={() => setConfirmClear(false)}>{zh ? "取消" : "Cancel"}</button><button className="confirm-delete" onClick={() => { setEntries([]); setConfirmClear(false); }}>{zh ? "确认清空" : "Confirm clear"}</button></div> : <button className="ghost" onClick={() => setConfirmClear(true)}>{zh ? "清空记录" : "Clear all"}</button>}</div>{entries.length === 0 ? <div className="empty">{zh ? "还没有记录。点击“记录今天”，开始你的第一条学习日志。" : "No entries yet. Select Log today to create your first study log."}</div> : <div className="record-list">{entries.map((entry) => <article className="record" key={entry.id}><div className="record-date"><b>{entry.date.slice(5).replace("-", "/")}</b><span>{entry.minutes} min</span></div><div className="record-body"><div><span className="tag">{categoryLabel(entry.category, zh)}</span><h3>{entry.topic}</h3></div><p>{entry.note || (zh ? "未添加学习笔记" : "No notes added")}</p></div><div className="record-progress"><b>{entry.progress}%</b><div><i style={{ width: `${entry.progress}%` }} /></div></div><button aria-label={`${zh ? "删除" : "Delete"} ${entry.topic}`} className="delete" onClick={() => setEntries(all => all.filter(x => x.id !== entry.id))}>×</button></article>)}</div>}</section>
     {showForm && <div className="modal-backdrop" role="presentation"><form className="entry-form" onSubmit={submit}><div className="form-heading"><div><p className="eyebrow">{zh ? "每日记录" : "DAILY LOG"}</p><h2>{zh ? "添加学习日志" : "Add study log"}</h2></div><button type="button" className="delete" onClick={() => setShowForm(false)}>×</button></div><label>{zh ? "日期" : "Date"}<input name="date" type="date" defaultValue={today()} required /></label><label>{zh ? "学习主题" : "Study topic"}<input name="topic" placeholder={zh ? "例如：实现一个 RAG 问答 Demo" : "e.g. Build a RAG Q&A demo"} required /></label><div className="form-row"><label>{zh ? "学习方向" : "Learning area"}<select name="category">{categories.map((item) => <option key={item.id} value={item.id}>{zh ? item.zh : item.en}</option>)}</select></label><label>{zh ? "专注分钟" : "Focus minutes"}<input name="minutes" type="number" min="1" defaultValue="60" required /></label><label>{zh ? "完成度" : "Progress"}<input name="progress" type="number" min="0" max="100" defaultValue="70" required /></label></div><label>{zh ? "收获与问题" : "Takeaways & blockers"}<textarea name="note" placeholder={zh ? "今天学到了什么？遇到哪些问题？" : "What did you learn? What got in the way?"} /></label><button className="primary" type="submit">{zh ? "保存记录" : "Save log"}</button></form></div>}
+    <section className="panel date-goals"><div className="panel-heading"><div><p className="eyebrow">{zh ? "日期目标" : "DATE GOALS"}</p><h2>{selectedDate}</h2></div><button className="text-button" onClick={() => setShowGoalForm((open) => !open)}>+ {zh ? "设定目标" : "Add goal"}</button></div>{showGoalForm && <form className="goal-form" onSubmit={addDateGoal}><input name="goalTitle" autoFocus placeholder={zh ? "例如：完成第一个软件" : "e.g. Finish my first software project"} maxLength={120} required /><button className="primary" type="submit">{zh ? "保存目标" : "Save goal"}</button></form>}{selectedGoals.length ? <ul className="goal-list">{selectedGoals.map((goal) => <li key={goal.id}><label><input type="checkbox" checked={goal.completed} onChange={() => setDateGoals((all) => all.map((item) => item.id === goal.id ? { ...item, completed: !item.completed } : item))} /><span className={goal.completed ? "completed" : ""}>{goal.title}</span></label><button className="delete" aria-label={`${zh ? "删除" : "Delete"} ${goal.title}`} onClick={() => setDateGoals((all) => all.filter((item) => item.id !== goal.id))}>×</button></li>)}</ul> : <p className="goal-empty">{zh ? "为这一天写下一个想完成的目标。" : "Set something you want to complete on this day."}</p>}</section>
     <div className={`focus-timer ${timerState}`}><div className="timer-popover">{timerState === "choosing" && <><button onClick={pauseSession}>☕ {zh ? "休息一下" : "Take a break"}</button><button onClick={finishSession}>✓ {zh ? "结束并记录" : "Finish & save"}</button></>}{timerState === "resting" && <span>{zh ? "计时已暂停" : "Timer paused"}</span>}</div><button className="timer-button" aria-label={timerLabel} onClick={() => { if (timerState === "idle" || timerState === "resting") startSession(); else if (timerState === "studying") setTimerState("choosing"); }}><span>{timerState === "studying" ? "Ⅱ" : timerState === "resting" ? "▶" : "◉"}</span><b>{timerState === "studying" || timerState === "choosing" || timerState === "resting" ? `${String(Math.floor(displayedSessionSeconds / 60)).padStart(2, "0")}:${String(displayedSessionSeconds % 60).padStart(2, "0")}` : timerLabel}</b></button></div>
   </main>;
 }
