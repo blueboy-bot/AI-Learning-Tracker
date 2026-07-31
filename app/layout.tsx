@@ -1,3 +1,5 @@
+/* Static styles are intentionally served from public for Vinext compatibility. */
+/* eslint-disable @next/next/no-css-tags */
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "AI Learning Tracker", description: "记录 AI 编程与软件开发学习进度的本地优先工具。" };

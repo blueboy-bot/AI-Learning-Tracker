@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { calculateStreak, getDatesInCurrentMonth, getElapsedSeconds, getLocalDateString, parseStoredJson } from "../lib/learning-utils.mjs";
 
 type Entry = { id: string; date: string; topic: string; category: string; minutes: number; progress: number; note: string; projectUrl?: string; tomorrowPlan?: string };
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => getLocalDateString();
 const formatDuration = (minutes: number, zh: boolean, seconds = 0) => {
   const wholeMinutes = Math.floor(minutes);
   const hours = Math.floor(wholeMinutes / 60);
@@ -11,11 +12,6 @@ const formatDuration = (minutes: number, zh: boolean, seconds = 0) => {
   const base = hours ? (zh ? `${hours} 小时${remaining ? ` ${remaining} 分钟` : ""}` : `${hours}h${remaining ? ` ${remaining}m` : ""}`) : (zh ? `${remaining} 分钟` : `${remaining} min`);
   return seconds ? `${base} ${String(seconds).padStart(2, "0")} ${zh ? "秒" : "sec"}` : base;
 };
-const seed: Entry[] = [
-  { id: "1", date: today(), topic: "构建 AI 学习记录器", category: "软件开发", minutes: 95, progress: 80, note: "完成了第一个可交互看板。" },
-  { id: "2", date: new Date(Date.now() - 86400000).toISOString().slice(0, 10), topic: "RAG 检索策略", category: "AI 应用", minutes: 75, progress: 70, note: "比较了向量检索与混合检索。" },
-  { id: "3", date: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10), topic: "TypeScript 泛型", category: "编程基础", minutes: 60, progress: 90, note: "整理了项目中的类型约束。" },
-];
 const coursePlan = [
   ["00", "课程设置与开发环境", "Course setup"], ["01", "AI 简介与发展史", "Introduction & history of AI"], ["02", "知识表示与专家系统", "Knowledge representation"],
   ["03", "感知机", "Perceptron"], ["04", "多层感知机", "Multi-layer perceptron"], ["05", "深度学习框架与过拟合", "Frameworks & overfitting"],
@@ -30,7 +26,7 @@ const lessonLink = (id: string, zh: boolean) => {
 };
 
 export default function Home() {
-  const [entries, setEntries] = useState<Entry[]>(seed);
+  const [entries, setEntries] = useState<Entry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -47,23 +43,29 @@ export default function Home() {
   const zh = lang === "zh";
 
   useEffect(() => {
-    const saved = localStorage.getItem("ai-learning-tracker-entries");
-    const savedGoal = localStorage.getItem("ai-learning-tracker-goal");
-    const savedTimer = localStorage.getItem("ai-learning-tracker-timer");
-    const savedPlan = localStorage.getItem("ai-learning-tracker-course-plan");
-    if (saved) setEntries(JSON.parse(saved));
-    if (savedGoal) setGoal(Number(savedGoal));
-    if (savedPlan) setCompletedLessons(JSON.parse(savedPlan));
-    if (savedTimer) {
-      const timer = JSON.parse(savedTimer) as { state: "idle" | "studying" | "choosing" | "resting"; seconds: number; updatedAt: number };
-      const elapsed = timer.state === "studying" ? Math.max(0, Math.floor((Date.now() - timer.updatedAt) / 1000)) : 0;
-      setSessionSeconds(timer.seconds + elapsed);
-      setTimerState(timer.state);
-      if (timer.state === "studying") setRunStartedAt(Date.now());
-    }
-    setLoaded(true);
+    const restore = window.setTimeout(() => {
+      const saved = parseStoredJson(localStorage.getItem("ai-learning-tracker-entries"), []);
+      const savedGoal = localStorage.getItem("ai-learning-tracker-goal");
+      const savedTimer = parseStoredJson(localStorage.getItem("ai-learning-tracker-timer"), null);
+      const savedPlan = parseStoredJson(localStorage.getItem("ai-learning-tracker-course-plan"), []);
+      if (Array.isArray(saved)) setEntries(saved.filter((entry): entry is Entry => Boolean(entry) && typeof entry === "object" && typeof entry.date === "string" && typeof entry.minutes === "number"));
+      const parsedGoal = Number(savedGoal);
+      if (Number.isFinite(parsedGoal) && parsedGoal >= 10) setGoal(parsedGoal);
+      if (Array.isArray(savedPlan) && savedPlan.every((lesson) => typeof lesson === "string")) setCompletedLessons(savedPlan);
+      if (savedTimer) {
+        const timer = savedTimer as { state?: "idle" | "studying" | "choosing" | "resting"; seconds?: number; updatedAt?: number };
+        const isValidTimer = ["idle", "studying", "choosing", "resting"].includes(timer.state ?? "") && Number.isFinite(timer.seconds) && Number.isFinite(timer.updatedAt);
+        if (isValidTimer) {
+          const elapsed = timer.state === "studying" ? Math.max(0, Math.floor((Date.now() - (timer.updatedAt as number)) / 1000)) : 0;
+          setSessionSeconds((timer.seconds as number) + elapsed);
+          setTimerState(timer.state as "idle" | "studying" | "choosing" | "resting");
+          if (timer.state === "studying") setRunStartedAt(Date.now());
+        }
+      }
+      setLoaded(true);
+    }, 0);
     const timer = window.setTimeout(() => setIsBooting(false), 900);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(restore); window.clearTimeout(timer); };
   }, []);
   useEffect(() => { if (loaded) localStorage.setItem("ai-learning-tracker-entries", JSON.stringify(entries)); }, [entries, loaded]);
   useEffect(() => { if (loaded) localStorage.setItem("ai-learning-tracker-goal", String(goal)); }, [goal, loaded]);
@@ -77,7 +79,7 @@ export default function Home() {
     return () => window.clearInterval(interval);
   }, [runStartedAt]);
 
-  const displayedSessionSeconds = sessionSeconds + (runStartedAt ? Math.max(0, Math.floor((clock - runStartedAt) / 1000)) : 0);
+  const displayedSessionSeconds = getElapsedSeconds(sessionSeconds, runStartedAt, clock);
   const startSession = () => {
     const startedAt = Date.now();
     setClock(startedAt);
@@ -93,22 +95,21 @@ export default function Home() {
   const loggedTodayMinutes = entries.filter((x) => x.date === today()).reduce((sum, x) => sum + x.minutes, 0);
   const todayMinutes = loggedTodayMinutes + displayedSessionSeconds / 60;
   const todayFocusLabel = formatDuration(todayMinutes, zh, displayedSessionSeconds % 60);
-  const weekMinutes = entries.filter((x) => new Date(x.date) >= new Date(Date.now() - 6 * 86400000)).reduce((sum, x) => sum + x.minutes, 0);
+  const weekStart = getLocalDateString(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() - 6));
+  const weekEntries = entries.filter((x) => x.date >= weekStart);
+  const weekMinutes = weekEntries.reduce((sum, x) => sum + x.minutes, 0);
   const selectedEntries = entries.filter((x) => x.date === selectedDate);
   const selectedMinutes = selectedEntries.reduce((sum, x) => sum + x.minutes, 0);
-  const streak = useMemo(() => {
-    const days = new Set(entries.map((x) => x.date)); let n = 0; const d = new Date();
-    while (days.has(d.toISOString().slice(0, 10))) { n++; d.setDate(d.getDate() - 1); }
-    return n;
-  }, [entries]);
+  const streak = useMemo(() => calculateStreak(entries), [entries]);
   const categories = ["AI 应用", "模型原理", "编程基础", "软件开发", "工程实践"];
-  const monthDays = useMemo(() => {
-    const now = new Date();
-    return Array.from({ length: now.getDate() }, (_, i) => new Date(now.getFullYear(), now.getMonth(), i + 1).toISOString().slice(0, 10));
-  }, []);
+  const monthDays = useMemo(() => getDatesInCurrentMonth(), []);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = new FormData(event.currentTarget);
-    const entry: Entry = { id: crypto.randomUUID(), date: String(form.get("date")), topic: String(form.get("topic")), category: String(form.get("category")), minutes: Number(form.get("minutes")), progress: Number(form.get("progress")), note: String(form.get("note")), projectUrl: String(form.get("projectUrl")), tomorrowPlan: String(form.get("tomorrowPlan")) };
+    const topic = String(form.get("topic") ?? "").trim();
+    const minutes = Number(form.get("minutes"));
+    const progress = Number(form.get("progress"));
+    if (!topic || !Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || !Number.isFinite(progress) || progress < 0 || progress > 100) return;
+    const entry: Entry = { id: crypto.randomUUID(), date: String(form.get("date")), topic, category: String(form.get("category")), minutes, progress, note: String(form.get("note")), projectUrl: String(form.get("projectUrl")), tomorrowPlan: String(form.get("tomorrowPlan")) };
     setEntries((all) => [entry, ...all]); setShowForm(false); event.currentTarget.reset();
   };
   const finishSession = () => {
@@ -125,7 +126,7 @@ export default function Home() {
     <section className="metrics">
       <Metric label={zh ? "今日专注" : "Focus today"} value={todayFocusLabel} hint={zh ? `目标 ${goal} 分钟` : `Goal ${goal} min`} progress={Math.min(100, Math.round(todayMinutes / goal * 100))} />
       <Metric label={zh ? "连续学习" : "Current streak"} value={`${streak} ${zh ? "天" : "days"}`} hint={zh ? "保持现在的节奏" : "Keep the momentum"} />
-      <Metric label={zh ? "本周投入" : "This week"} value={formatDuration(weekMinutes, zh)} hint={`${entries.filter(x => new Date(x.date) >= new Date(Date.now() - 6 * 86400000)).length} ${zh ? "条学习记录" : "study logs"}`} />
+      <Metric label={zh ? "本周投入" : "This week"} value={formatDuration(weekMinutes, zh)} hint={`${weekEntries.length} ${zh ? "条学习记录" : "study logs"}`} />
       <Metric label={zh ? "已记录主题" : "Topics logged"} value={`${new Set(entries.map(x => x.topic)).size} ${zh ? "个" : "topics"}`} hint={zh ? "积累可复盘的成果" : "Build a reviewable portfolio"} />
     </section>
     <section className="content-grid"><div className="panel heatmap"><div className="panel-heading"><div><p className="eyebrow">{zh ? "学习轨迹" : "LEARNING TRAIL"}</p><h2>{new Intl.DateTimeFormat(zh ? "zh-CN" : "en-US", { year: "numeric", month: "long" }).format(new Date())}</h2></div><span className="legend"><i /> {zh ? "少" : "Less"} <i className="mid" /> <i className="high" /> {zh ? "多" : "More"}</span></div><div className="weekday-row">{(zh ? ["日", "一", "二", "三", "四", "五", "六"] : ["S", "M", "T", "W", "T", "F", "S"]).map((day, i) => <span key={`${day}-${i}`}>{day}</span>)}</div><div className="heat-cells month-cells" style={{ "--month-offset": new Date(new Date().getFullYear(), new Date().getMonth(), 1).getDay() } as React.CSSProperties}>{monthDays.map((day) => { const m = entries.filter(x => x.date === day).reduce((a, x) => a + x.minutes, 0); return <button key={day} onClick={() => setSelectedDate(day)} title={`${day}: ${m} min`} className={`heat ${day === selectedDate ? "selected" : ""} ${m >= 90 ? "strong" : m >= 45 ? "medium" : m ? "light" : ""}`}><span>{Number(day.slice(-2))}</span></button>; })}</div><div className="heat-caption"><span>{zh ? "本月 1 日" : "1st of month"}</span><span>{zh ? "今天" : "Today"}</span></div><div className="day-detail"><b>{selectedDate} · {formatDuration(selectedMinutes, zh)}</b>{selectedEntries.length ? <ul>{selectedEntries.map((entry) => <li key={entry.id}><span>{entry.topic}</span><em>{formatDuration(entry.minutes, zh)}</em></li>)}</ul> : <p>{zh ? "当天还没有学习记录。" : "No learning record for this day."}</p>}</div></div>
