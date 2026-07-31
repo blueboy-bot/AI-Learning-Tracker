@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AI Learning Tracker",
+  "version": "0.1.0",
+  "identifier": "com.blueboybot.ai-learning-tracker",
+  "build": {
+    "beforeDevCommand": "pnpm desktop:web",
+    "devUrl": "http://127.0.0.1:3000",
+    "beforeBuildCommand": "pnpm exec vinext build",
+    "frontendDist": "../dist/client"
+  },
+  "app": {
+    "windows": [{ "title": "AI Learning Tracker", "width": 1240, "height": 860, "minWidth": 900, "minHeight": 640, "resizable": true }],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "dmg"],
+    "category": "Productivity",
+    "shortDescription": "A local-first AI learning tracker"
+  }
+}

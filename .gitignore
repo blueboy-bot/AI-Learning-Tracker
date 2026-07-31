@@ -6,6 +6,7 @@ node_modules/
 # Build and runtime output
 dist/
 build/
+src-tauri/target/
 .next/
 .vinext/
 .wrangler/
